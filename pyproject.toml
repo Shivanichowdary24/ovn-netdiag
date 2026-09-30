@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ovn-netdiag"
+version = "0.1.0"
+description = "OVN-Kubernetes Network Diagnostics Tool"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "OVN-NetDiag Contributors" }]
+dependencies = [
+    "kubernetes>=28.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+ovn-netdiag = "ovn_netdiag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ovn_netdiag*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["ovn_netdiag"]

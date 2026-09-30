@@ -1,0 +1,227 @@
+{
+  "nodes": [
+    {
+      "name": "node-control-plane",
+      "pod_cidr": "10.244.0.0/24",
+      "addresses": ["10.0.0.10"],
+      "status": "Ready"
+    },
+    {
+      "name": "node-worker-1",
+      "pod_cidr": "10.244.1.0/24",
+      "addresses": ["10.0.0.11"],
+      "status": "Ready"
+    },
+    {
+      "name": "node-worker-2",
+      "pod_cidr": "10.244.2.0/24",
+      "addresses": ["10.0.0.12"],
+      "status": "Ready"
+    }
+  ],
+  "pods": [
+    {
+      "name": "frontend-pod",
+      "namespace": "frontend",
+      "ip": "10.244.1.5",
+      "node": "node-worker-1",
+      "labels": {"app": "frontend", "tier": "web"},
+      "containers": [
+        {"name": "frontend", "ports": [{"container_port": 8080, "protocol": "TCP"}]}
+      ],
+      "phase": "Running"
+    },
+    {
+      "name": "backend-pod",
+      "namespace": "backend",
+      "ip": "10.244.2.10",
+      "node": "node-worker-2",
+      "labels": {"app": "backend", "tier": "api"},
+      "containers": [
+        {"name": "backend", "ports": [{"container_port": 8080, "protocol": "TCP"}]}
+      ],
+      "phase": "Running"
+    },
+    {
+      "name": "blocked-pod",
+      "namespace": "restricted",
+      "ip": "10.244.2.20",
+      "node": "node-worker-2",
+      "labels": {"app": "restricted", "tier": "internal"},
+      "containers": [
+        {"name": "restricted", "ports": [{"container_port": 3306, "protocol": "TCP"}]}
+      ],
+      "phase": "Running"
+    },
+    {
+      "name": "db-pod",
+      "namespace": "database",
+      "ip": "10.244.0.15",
+      "node": "node-control-plane",
+      "labels": {"app": "postgres", "tier": "db"},
+      "containers": [
+        {"name": "postgres", "ports": [{"container_port": 5432, "protocol": "TCP"}]}
+      ],
+      "phase": "Running"
+    }
+  ],
+  "services": [
+    {
+      "name": "backend-service",
+      "namespace": "backend",
+      "cluster_ip": "10.96.10.20",
+      "ports": [{"port": 8080, "target_port": 8080, "protocol": "TCP"}],
+      "selector": {"app": "backend"},
+      "type": "ClusterIP"
+    },
+    {
+      "name": "frontend-service",
+      "namespace": "frontend",
+      "cluster_ip": "10.96.10.30",
+      "ports": [{"port": 80, "target_port": 8080, "protocol": "TCP"}],
+      "selector": {"app": "frontend"},
+      "type": "ClusterIP"
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "backend-service",
+      "namespace": "backend",
+      "addresses": ["10.244.2.10"],
+      "ports": [{"port": 8080, "protocol": "TCP"}],
+      "ready": true
+    },
+    {
+      "name": "frontend-service",
+      "namespace": "frontend",
+      "addresses": ["10.244.1.5"],
+      "ports": [{"port": 8080, "protocol": "TCP"}],
+      "ready": true
+    }
+  ],
+  "network_policies": [
+    {
+      "name": "backend-default-deny-ingress",
+      "namespace": "backend",
+      "types": ["Ingress"],
+      "pod_selector": {},
+      "ingress_rules": [],
+      "egress_rules": null
+    },
+    {
+      "name": "backend-allow-frontend-ingress",
+      "namespace": "backend",
+      "types": ["Ingress"],
+      "pod_selector": {"app": "backend"},
+      "ingress_rules": [
+        {
+          "pod_selector": {"app": "frontend"},
+          "namespace_selector": {"name": "frontend"},
+          "ip_blocks": [],
+          "ports": [{"port": 8080, "protocol": "TCP"}]
+        }
+      ],
+      "egress_rules": null
+    },
+    {
+      "name": "restricted-default-deny",
+      "namespace": "restricted",
+      "types": ["Ingress", "Egress"],
+      "pod_selector": {},
+      "ingress_rules": [],
+      "egress_rules": []
+    },
+    {
+      "name": "db-allow-backend-egress",
+      "namespace": "database",
+      "types": ["Egress"],
+      "pod_selector": {"app": "postgres"},
+      "ingress_rules": null,
+      "egress_rules": [
+        {
+          "pod_selector": {"app": "backend"},
+          "namespace_selector": {"name": "backend"},
+          "ip_blocks": [],
+          "ports": [{"port": 5432, "protocol": "TCP"}]
+        }
+      ]
+    }
+  ],
+  "ovn": {
+    "logical_switches": [
+      {"name": "node-worker-1", "subnet": "10.244.1.0/24"},
+      {"name": "node-worker-2", "subnet": "10.244.2.0/24"},
+      {"name": "node-control-plane", "subnet": "10.244.0.0/24"}
+    ],
+    "logical_switch_ports": [
+      {"name": "frontend-pod_frontend", "switch": "node-worker-1", "addresses": ["10.244.1.5"], "type": "virtual"},
+      {"name": "backend-pod_backend", "switch": "node-worker-2", "addresses": ["10.244.2.10"], "type": "virtual"},
+      {"name": "restricted-pod_restricted", "switch": "node-worker-2", "addresses": ["10.244.2.20"], "type": "virtual"},
+      {"name": "db-pod_database", "switch": "node-control-plane", "addresses": ["10.244.0.15"], "type": "virtual"}
+    ],
+    "logical_routers": [
+      {"name": "ovn-cluster", "ports": []}
+    ],
+    "port_groups": [
+      {"name": "backendIngressDefaultDeny", "ports": ["backend-pod_backend"]},
+      {"name": "restrictedIngressDefaultDeny", "ports": ["restricted-pod_restricted"]},
+      {"name": "restrictedEgressDefaultDeny", "ports": ["restricted-pod_restricted"]}
+    ],
+    "acls": [
+      {
+        "uuid": "acl-001",
+        "port_group": "backendIngressDefaultDeny",
+        "direction": "to-lport",
+        "priority": 1000,
+        "match": "ip",
+        "action": "drop",
+        "log": false
+      },
+      {
+        "uuid": "acl-002",
+        "port_group": "backendIngressDefaultDeny",
+        "direction": "to-lport",
+        "priority": 1001,
+        "match": "ip4.src == 10.244.1.5 && tcp.dst == 8080",
+        "action": "allow-related",
+        "log": true
+      },
+      {
+        "uuid": "acl-003",
+        "port_group": "restrictedIngressDefaultDeny",
+        "direction": "to-lport",
+        "priority": 1000,
+        "match": "ip",
+        "action": "drop",
+        "log": false
+      },
+      {
+        "uuid": "acl-004",
+        "port_group": "restrictedEgressDefaultDeny",
+        "direction": "from-lport",
+        "priority": 1000,
+        "match": "ip",
+        "action": "drop",
+        "log": false
+      }
+    ],
+    "logical_flows": [
+      {"uuid": "lf-001", "router": "ovn-cluster", "match": "ip4.dst == 10.244.2.10", "actions": "output", "priority": 100},
+      {"uuid": "lf-002", "router": "ovn-cluster", "match": "ip4.dst == 10.244.2.20", "actions": "output", "priority": 100},
+      {"uuid": "lf-003", "router": "ovn-cluster", "match": "ip4.dst == 10.244.0.15", "actions": "output", "priority": 100}
+    ]
+  },
+  "ovs": {
+    "bridges": [
+      {"name": "br-int", "datapath_id": "0000aabbccddeeff", "ports": ["patch-ovn-cluster", "veth-frontend", "veth-backend", "veth-restricted", "veth-db"]},
+      {"name": "br-ex", "datapath_id": "0000112233445566", "ports": ["eth0", "patch-ovn-cluster"]}
+    ],
+    "flows": [
+      {"cookie": "0x0", "priority": 100, "table": 0, "match": "nw_dst=10.244.2.10,tp_dst=8080", "actions": "output:2"},
+      {"cookie": "0x0", "priority": 200, "table": 0, "match": "nw_dst=10.244.2.20", "actions": "drop"},
+      {"cookie": "0x0", "priority": 50, "table": 0, "match": "arp", "actions": "FLOOD"},
+      {"cookie": "0x0", "priority": 100, "table": 0, "match": "nw_dst=10.244.0.15,tp_dst=5432", "actions": "output:4"},
+      {"cookie": "0x0", "priority": 0, "table": 0, "match": "", "actions": "drop"}
+    ]
+  }
+}
